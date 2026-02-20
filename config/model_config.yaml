@@ -1,0 +1,85 @@
+# Model Configuration for Ship Engine Anomaly Detection
+# =====================================================
+
+# Model versions and paths
+models:
+  ocsvm:
+    name: "One-Class SVM"
+    file_pattern: "ocsvm_symbolic*.joblib"
+    default_params:
+      nu: 0.02
+      gamma: 0.2
+      kernel: "rbf"
+    description: |
+      One-Class SVM with RBF kernel trained on symbolic regression features.
+      Good for detecting point anomalies with well-defined decision boundary.
+
+  iforest:
+    name: "Isolation Forest"
+    file_pattern: "if_symbolic*.joblib"
+    default_params:
+      contamination: 0.02
+      n_estimators: 300
+      random_state: 42
+    description: |
+      Isolation Forest trained on symbolic regression features (unscaled).
+      Effective for detecting anomalies through isolation properties.
+
+# Feature engineering configuration
+features:
+  symbolic:
+    version: "v1.0"
+    output_order:
+      - oil_temp
+      - coolant_temp
+      - oil_pressure
+      - fuel_pressure
+    equations:
+      oil_temp: "log(x1 * sqrt(x0)) + 69.69828"
+      coolant_temp: "sqrt(x2) + 69.59798"
+      oil_pressure: "exp(exp(sqrt(sqrt(log(x0) * 0.82669675) / x1)))"
+      fuel_pressure: "(40.246246 / (1619.7604 - x0)) + 6.4258323"
+
+# Input validation ranges (physical constraints)
+validation:
+  sensor_ranges:
+    engine_rpm:
+      min: 0
+      max: 3000
+      unit: "RPM"
+    lub_oil_pressure:
+      min: 0
+      max: 15
+      unit: "bar"
+    fuel_pressure:
+      min: 0
+      max: 50
+      unit: "bar"
+    coolant_pressure:
+      min: 0
+      max: 10
+      unit: "bar"
+    oil_temp:
+      min: 0
+      max: 150
+      unit: "°C"
+    coolant_temp:
+      min: 0
+      max: 120
+      unit: "°C"
+
+# Detection thresholds
+detection:
+  confidence_threshold: 0.6
+  ensemble_require_agreement: false
+  anomaly_score_percentile: 98
+
+# Monitoring configuration
+monitoring:
+  track_predictions: true
+  log_anomalies: true
+  metrics:
+    - prediction_count
+    - anomaly_rate
+    - latency_ms
+    - model_confidence
