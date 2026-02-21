@@ -76,17 +76,25 @@ def evaluate_symbolic_equation(
     variables: List[str],
     *,
     clip: tuple[float, float] | None = (-1e6, 1e6),
+    min_value: float = 1e-6,
 ) -> np.ndarray:
     """
     Evaluates a symbolic regression equation with a locked mapping:
       x0 -> variables[0], x1 -> variables[1], ...
 
     - Sanitises NaN / inf
+    - Replaces zero/negative values with min_value to prevent log/sqrt domain errors
     - Optionally clips extreme values
     - Returns a 1D numpy array of length len(df)
     """
-    # Map x0, x1, ... to numpy arrays
-    local = {f"x{i}": df[var].to_numpy(dtype=float) for i, var in enumerate(variables)}
+    # Map x0, x1, ... to numpy arrays, replacing zeros with small positive values
+    # to prevent domain errors in log/sqrt operations
+    local = {}
+    for i, var in enumerate(variables):
+        arr = df[var].to_numpy(dtype=float)
+        # Replace zero or negative values with min_value for safe math operations
+        arr = np.where(arr <= 0, min_value, arr)
+        local[f"x{i}"] = arr
     local.update(_ALLOWED_FUNCS)
 
     try:
