@@ -90,11 +90,12 @@ st.markdown("""
     .regime-warning { background-color: #ffc107; color: black; }
     .regime-danger { background-color: #dc3545; color: white; }
     .tip-box {
-        background-color: #e7f3ff;
-        border-left: 4px solid #1f77b4;
+        background-color: #1a3a4a;
+        border-left: 4px solid #4CAF50;
         padding: 10px;
         margin: 10px 0;
         border-radius: 0 8px 8px 0;
+        color: #ffffff;
     }
 </style>
 """, unsafe_allow_html=True)
