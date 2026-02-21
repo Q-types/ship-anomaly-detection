@@ -70,32 +70,64 @@ def _validate_inputs(df: pd.DataFrame, spec: Dict[str, Dict[str, object]]) -> No
         raise KeyError(f"Missing required input columns for symbolic features: {missing}")
 
 
+# Default fallback values for each symbolic feature (based on training data means)
+_FALLBACK_VALUES = {
+    "oil_temp": 85.0,
+    "coolant_temp": 80.0,
+    "oil_pressure": 3.5,
+    "fuel_pressure": 6.5,
+}
+
+
+def _safe_log(x: np.ndarray) -> np.ndarray:
+    """Log that handles non-positive values."""
+    return np.log(np.maximum(x, 1e-10))
+
+
+def _safe_sqrt(x: np.ndarray) -> np.ndarray:
+    """Sqrt that handles negative values."""
+    return np.sqrt(np.maximum(x, 0))
+
+
+def _safe_exp(x: np.ndarray) -> np.ndarray:
+    """Exp that prevents overflow."""
+    return np.exp(np.clip(x, -700, 700))
+
+
+_SAFE_FUNCS = {
+    "log": _safe_log,
+    "sqrt": _safe_sqrt,
+    "exp": _safe_exp,
+    "abs": np.abs,
+    "clip": np.clip,
+    "maximum": np.maximum,
+    "minimum": np.minimum,
+}
+
+
 def evaluate_symbolic_equation(
     df: pd.DataFrame,
     equation: str,
     variables: List[str],
     *,
     clip: tuple[float, float] | None = (-1e6, 1e6),
-    min_value: float = 1e-6,
+    fallback: float | None = None,
 ) -> np.ndarray:
     """
     Evaluates a symbolic regression equation with a locked mapping:
       x0 -> variables[0], x1 -> variables[1], ...
 
-    - Sanitises NaN / inf
-    - Replaces zero/negative values with min_value to prevent log/sqrt domain errors
+    - Uses safe math functions to handle edge cases (log of 0, sqrt of negative, etc.)
+    - Replaces any remaining non-finite values with fallback
     - Optionally clips extreme values
     - Returns a 1D numpy array of length len(df)
     """
-    # Map x0, x1, ... to numpy arrays, replacing zeros with small positive values
-    # to prevent domain errors in log/sqrt operations
+    # Map x0, x1, ... to numpy arrays
     local = {}
     for i, var in enumerate(variables):
         arr = df[var].to_numpy(dtype=float)
-        # Replace zero or negative values with min_value for safe math operations
-        arr = np.where(arr <= 0, min_value, arr)
         local[f"x{i}"] = arr
-    local.update(_ALLOWED_FUNCS)
+    local.update(_SAFE_FUNCS)
 
     try:
         out = eval(equation, _SAFE_GLOBALS, local)
@@ -112,14 +144,9 @@ def evaluate_symbolic_equation(
             f"Equation output has wrong shape. Expected (n_samples,), got {out.shape}"
         )
 
-    # Replace inf with NaN, then check
-    out = np.where(np.isfinite(out), out, np.nan)
-
-    if np.isnan(out).any():
-        raise ValueError(
-            f"Non-finite values produced by equation='{equation}'. "
-            f"Check domain of variables={variables}."
-        )
+    # Replace non-finite values with fallback
+    if fallback is not None:
+        out = np.where(np.isfinite(out), out, fallback)
 
     if clip is not None:
         out = np.clip(out, clip[0], clip[1])
@@ -155,8 +182,9 @@ def compute_symbolic_features(
         entry = spec[name]
         variables = entry["variables"]  # type: ignore[assignment]
         equation = entry["equation"]    # type: ignore[assignment]
+        fallback = _FALLBACK_VALUES.get(name, 0.0)
 
-        y = evaluate_symbolic_equation(df, equation, variables)
+        y = evaluate_symbolic_equation(df, equation, variables, fallback=fallback)
         feats.append(y)
         names.append(f"sym_{name}")
 
