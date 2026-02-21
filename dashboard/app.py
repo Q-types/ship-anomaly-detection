@@ -71,8 +71,225 @@ st.markdown("""
         color: #ffc107;
         font-weight: bold;
     }
+    .component-highlight {
+        border: 2px solid #1f77b4;
+        border-radius: 8px;
+        padding: 5px;
+        background-color: rgba(31, 119, 180, 0.1);
+    }
+    .preset-btn {
+        margin: 2px;
+    }
+    .regime-indicator {
+        font-size: 0.8rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-left: 8px;
+    }
+    .regime-normal { background-color: #28a745; color: white; }
+    .regime-warning { background-color: #ffc107; color: black; }
+    .regime-danger { background-color: #dc3545; color: white; }
+    .tip-box {
+        background-color: #e7f3ff;
+        border-left: 4px solid #1f77b4;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 0 8px 8px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ============================================================================
+# Preset Scenarios & Operating Regimes
+# ============================================================================
+
+PRESET_SCENARIOS = {
+    "🟢 Normal Cruising": {
+        "engine_rpm": 1200,
+        "lub_oil_pressure": 4.5,
+        "fuel_pressure": 6.5,
+        "coolant_pressure": 2.8,
+        "oil_temp": 82,
+        "coolant_temp": 78,
+        "description": "Typical steady-state operation at moderate load"
+    },
+    "🔵 Cold Start": {
+        "engine_rpm": 600,
+        "lub_oil_pressure": 2.5,
+        "fuel_pressure": 5.0,
+        "coolant_pressure": 1.5,
+        "oil_temp": 25,
+        "coolant_temp": 20,
+        "description": "Engine starting from cold - low temperatures, idle RPM"
+    },
+    "🟠 High Load": {
+        "engine_rpm": 2400,
+        "lub_oil_pressure": 5.5,
+        "fuel_pressure": 8.0,
+        "coolant_pressure": 3.5,
+        "oil_temp": 95,
+        "coolant_temp": 88,
+        "description": "Full power operation - elevated temps and pressures"
+    },
+    "🔴 Overheating": {
+        "engine_rpm": 1800,
+        "lub_oil_pressure": 3.0,
+        "fuel_pressure": 7.0,
+        "coolant_pressure": 4.5,
+        "oil_temp": 125,
+        "coolant_temp": 105,
+        "description": "⚠️ Dangerous: Cooling system failure symptoms"
+    },
+    "⚫ Low Oil Pressure": {
+        "engine_rpm": 1500,
+        "lub_oil_pressure": 1.2,
+        "fuel_pressure": 6.5,
+        "coolant_pressure": 2.5,
+        "oil_temp": 95,
+        "coolant_temp": 80,
+        "description": "⚠️ Critical: Potential oil pump failure or leak"
+    },
+    "🎲 Random Scenario": {
+        "engine_rpm": None,  # Will be randomly generated
+        "description": "Generate a random engine state for exploration"
+    },
+}
+
+# Operating regime thresholds for each parameter
+OPERATING_REGIMES = {
+    "engine_rpm": {
+        "normal": (500, 2000),
+        "warning": (2000, 2500),
+        "danger_low": (0, 300),
+        "danger_high": (2500, 3000),
+        "unit": "RPM",
+        "tip": "RPM affects oil pressure and temperatures. Higher RPM = more heat generation."
+    },
+    "lub_oil_pressure": {
+        "normal": (3.0, 6.0),
+        "warning": (2.0, 3.0),
+        "danger_low": (0, 2.0),
+        "danger_high": (8.0, 15.0),
+        "unit": "bar",
+        "tip": "Oil pressure lubricates bearings. Too low = metal-on-metal contact damage."
+    },
+    "fuel_pressure": {
+        "normal": (5.0, 8.0),
+        "warning": (4.0, 5.0),
+        "danger_low": (0, 4.0),
+        "danger_high": (10.0, 50.0),
+        "unit": "bar",
+        "tip": "Fuel pressure ensures proper injection. Affects combustion efficiency."
+    },
+    "coolant_pressure": {
+        "normal": (2.0, 3.5),
+        "warning": (1.5, 2.0),
+        "danger_low": (0, 1.5),
+        "danger_high": (5.0, 10.0),
+        "unit": "bar",
+        "tip": "Coolant circulates heat away from engine. High pressure may indicate blockage."
+    },
+    "oil_temp": {
+        "normal": (70, 95),
+        "warning": (95, 110),
+        "danger_low": (0, 40),
+        "danger_high": (110, 150),
+        "unit": "°C",
+        "tip": "Oil temperature affects viscosity. Too hot = breakdown, too cold = poor flow."
+    },
+    "coolant_temp": {
+        "normal": (70, 90),
+        "warning": (90, 100),
+        "danger_low": (0, 50),
+        "danger_high": (100, 120),
+        "unit": "°C",
+        "tip": "Coolant temp indicates heat removal efficiency. Watch for rising trends."
+    },
+}
+
+def get_regime_status(param: str, value: float) -> tuple[str, str]:
+    """Return regime status (normal/warning/danger) and color for a parameter value."""
+    regime = OPERATING_REGIMES[param]
+
+    if regime["normal"][0] <= value <= regime["normal"][1]:
+        return "normal", "#28a745"
+    elif regime.get("warning") and regime["warning"][0] <= value <= regime["warning"][1]:
+        return "warning", "#ffc107"
+    elif regime.get("danger_low") and regime["danger_low"][0] <= value <= regime["danger_low"][1]:
+        return "danger", "#dc3545"
+    elif regime.get("danger_high") and regime["danger_high"][0] <= value <= regime["danger_high"][1]:
+        return "danger", "#dc3545"
+    else:
+        return "warning", "#ffc107"
+
+
+def create_engine_diagram(values: dict, selected_component: str = None) -> go.Figure:
+    """Create an interactive engine diagram with component status indicators."""
+    fig = go.Figure()
+
+    # Engine block (main rectangle)
+    fig.add_shape(type="rect", x0=1, y0=1, x1=5, y1=4,
+                  fillcolor="#2c3e50", line=dict(color="#1a252f", width=3))
+
+    # Component positions and their associated parameters
+    components = {
+        "engine_rpm": {"x": 3, "y": 4.5, "label": "🔄 RPM", "size": 40},
+        "lub_oil_pressure": {"x": 1.5, "y": 2.5, "label": "🛢️ Oil", "size": 35},
+        "fuel_pressure": {"x": 4.5, "y": 2.5, "label": "⛽ Fuel", "size": 35},
+        "coolant_pressure": {"x": 3, "y": 1, "label": "💧 Coolant", "size": 35},
+        "oil_temp": {"x": 1.5, "y": 1.5, "label": "🌡️ Oil Temp", "size": 30},
+        "coolant_temp": {"x": 4.5, "y": 1.5, "label": "🌡️ Cool Temp", "size": 30},
+    }
+
+    for param, comp in components.items():
+        value = values.get(param, 0)
+        status, color = get_regime_status(param, value)
+
+        # Highlight selected component
+        marker_line = dict(color="#1f77b4", width=4) if param == selected_component else dict(color="white", width=2)
+        marker_size = comp["size"] + 10 if param == selected_component else comp["size"]
+
+        fig.add_trace(go.Scatter(
+            x=[comp["x"]], y=[comp["y"]],
+            mode="markers+text",
+            marker=dict(size=marker_size, color=color, line=marker_line),
+            text=[f"{comp['label']}<br>{value:.1f}" if isinstance(value, float) else f"{comp['label']}<br>{value}"],
+            textposition="middle center",
+            textfont=dict(size=10, color="white"),
+            name=param,
+            hovertemplate=f"<b>{param}</b><br>Value: {value}<br>Status: {status}<extra></extra>",
+            customdata=[param],
+        ))
+
+    # Add connecting lines to show relationships
+    connections = [
+        (3, 4.5, 1.5, 2.5, "RPM→Oil"),  # RPM to Oil Pressure
+        (3, 4.5, 4.5, 2.5, "RPM→Fuel"),  # RPM to Fuel
+        (1.5, 2.5, 1.5, 1.5, "Oil→Temp"),  # Oil Pressure to Oil Temp
+        (3, 1, 4.5, 1.5, "Cool→Temp"),  # Coolant Pressure to Coolant Temp
+    ]
+
+    for x0, y0, x1, y1, _ in connections:
+        fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1,
+                      line=dict(color="#666", width=1, dash="dot"))
+
+    # Status legend
+    fig.add_annotation(x=0.5, y=5, text="🟢 Normal  🟡 Warning  🔴 Danger",
+                       showarrow=False, font=dict(size=12))
+
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(visible=False, range=[0, 6]),
+        yaxis=dict(visible=False, range=[0, 5.5]),
+        height=350,
+        margin=dict(l=10, r=10, t=30, b=10),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        title=dict(text="Engine Component Status", x=0.5, font=dict(size=16)),
+    )
+
+    return fig
 
 
 # ============================================================================
@@ -133,15 +350,17 @@ def predict_single(reading: dict, models: dict, model_name: str = "ocsvm"):
 
     is_anomaly = pred == -1
 
-    # Calculate confidence
+    # Calculate anomaly confidence (high = definitely anomaly, low = definitely normal)
+    # Negative scores = anomaly, positive scores = normal
     if model_name == "ocsvm":
-        confidence = 1.0 / (1.0 + np.exp(-2 * score))
+        # Sigmoid flipped: very negative score → ~100%, positive score → ~0%
+        anomaly_confidence = 1.0 / (1.0 + np.exp(2 * score))
     else:
-        confidence = 1.0 / (1.0 + np.exp(-5 * score))
+        anomaly_confidence = 1.0 / (1.0 + np.exp(5 * score))
 
     return {
         "is_anomaly": is_anomaly,
-        "confidence": float(confidence),
+        "confidence": float(anomaly_confidence),
         "score": float(score),
         "prediction": pred,
     }
@@ -393,34 +612,167 @@ def main():
     )
 
     # ========================================================================
-    # Page: Real-time Detection
+    # Page: Real-time Detection (Enhanced with 3 UX Features)
     # ========================================================================
     if page == "🔍 Real-time Detection":
         st.header("Real-time Anomaly Detection")
-        st.markdown("Enter sensor values to check for anomalies in real-time.")
+        st.markdown("Explore engine states and detect anomalies in real-time.")
 
-        col1, col2 = st.columns(2)
+        # Initialize session state for values if not exists
+        if "sensor_values" not in st.session_state:
+            st.session_state.sensor_values = {
+                "engine_rpm": 1200,
+                "lub_oil_pressure": 4.5,
+                "fuel_pressure": 6.5,
+                "coolant_pressure": 2.8,
+                "oil_temp": 82,
+                "coolant_temp": 78,
+            }
+        if "selected_component" not in st.session_state:
+            st.session_state.selected_component = None
+        if "guided_mode" not in st.session_state:
+            st.session_state.guided_mode = True
 
-        with col1:
-            st.subheader("Sensor Inputs")
+        # Guided Exploration Toggle
+        st.session_state.guided_mode = st.toggle(
+            "🎓 Guided Exploration Mode",
+            value=st.session_state.guided_mode,
+            help="Shows operating regime indicators and educational tips"
+        )
 
-            engine_rpm = st.slider("Engine RPM", 0, 3000, 750, 10)
-            lub_oil_pressure = st.slider("Lub Oil Pressure (bar)", 0.0, 15.0, 3.5, 0.1)
-            fuel_pressure = st.slider("Fuel Pressure (bar)", 0.0, 50.0, 6.0, 0.5)
-            coolant_pressure = st.slider("Coolant Pressure (bar)", 0.0, 10.0, 2.5, 0.1)
-            oil_temp = st.slider("Oil Temperature (°C)", 0, 150, 78, 1)
-            coolant_temp = st.slider("Coolant Temperature (°C)", 0, 120, 72, 1)
+        if st.session_state.guided_mode:
+            st.markdown("""
+            <div class="tip-box">
+            💡 <b>Guided Mode Active</b>: Slider colors indicate operating regimes.
+            <span style="color:#28a745">●</span> Normal
+            <span style="color:#ffc107">●</span> Warning
+            <span style="color:#dc3545">●</span> Danger
+            — Click components in the diagram to highlight corresponding sliders.
+            </div>
+            """, unsafe_allow_html=True)
 
-        with col2:
-            st.subheader("Prediction Result")
+        # Main layout: 3 columns
+        col_diagram, col_sliders, col_result = st.columns([1.2, 1.3, 1])
+
+        # === Column 1: Engine Diagram ===
+        with col_diagram:
+            st.subheader("🔧 Engine Diagram")
+
+            # Create and display engine diagram
+            engine_fig = create_engine_diagram(
+                st.session_state.sensor_values,
+                st.session_state.selected_component
+            )
+            st.plotly_chart(engine_fig, use_container_width=True, key="engine_diagram")
+
+            # Component selection buttons
+            st.markdown("**Click to highlight:**")
+            comp_cols = st.columns(3)
+            component_labels = {
+                "engine_rpm": "🔄 RPM",
+                "lub_oil_pressure": "🛢️ Oil P",
+                "fuel_pressure": "⛽ Fuel P",
+                "coolant_pressure": "💧 Cool P",
+                "oil_temp": "🌡️ Oil T",
+                "coolant_temp": "🌡️ Cool T",
+            }
+            for i, (comp, label) in enumerate(component_labels.items()):
+                with comp_cols[i % 3]:
+                    if st.button(label, key=f"btn_{comp}", use_container_width=True):
+                        st.session_state.selected_component = comp
+                        st.rerun()
+
+        # === Column 2: Sensor Sliders ===
+        with col_sliders:
+            st.subheader("🎛️ Sensor Inputs")
+
+            def create_slider_with_regime(param: str, label: str, min_val, max_val, step, format_str=None):
+                """Create a slider with regime indicator."""
+                current_val = st.session_state.sensor_values[param]
+                regime = OPERATING_REGIMES[param]
+                status, color = get_regime_status(param, current_val)
+
+                # Highlight if selected
+                is_selected = st.session_state.selected_component == param
+                if is_selected and st.session_state.guided_mode:
+                    st.markdown(f'<div class="component-highlight">', unsafe_allow_html=True)
+
+                # Status indicator
+                if st.session_state.guided_mode:
+                    status_icon = {"normal": "🟢", "warning": "🟡", "danger": "🔴"}.get(status, "⚪")
+                    st.markdown(f"**{label}** {status_icon}")
+                else:
+                    st.markdown(f"**{label}**")
+
+                # Slider
+                new_val = st.slider(
+                    label,
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=current_val if isinstance(current_val, int) else float(current_val),
+                    step=step,
+                    format=format_str,
+                    key=f"slider_{param}",
+                    label_visibility="collapsed"
+                )
+                st.session_state.sensor_values[param] = new_val
+
+                # Educational tip in guided mode
+                if st.session_state.guided_mode and is_selected:
+                    st.caption(f"💡 {regime['tip']}")
+
+                if is_selected and st.session_state.guided_mode:
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                return new_val
+
+            engine_rpm = create_slider_with_regime("engine_rpm", "Engine RPM", 0, 3000, 10)
+            lub_oil_pressure = create_slider_with_regime("lub_oil_pressure", "Lub Oil Pressure (bar)", 0.0, 15.0, 0.1)
+            fuel_pressure = create_slider_with_regime("fuel_pressure", "Fuel Pressure (bar)", 0.0, 50.0, 0.5)
+            coolant_pressure = create_slider_with_regime("coolant_pressure", "Coolant Pressure (bar)", 0.0, 10.0, 0.1)
+            oil_temp = create_slider_with_regime("oil_temp", "Oil Temperature (°C)", 0, 150, 1)
+            coolant_temp = create_slider_with_regime("coolant_temp", "Coolant Temperature (°C)", 0, 120, 1)
+
+            # === Preset Conditions Section ===
+            st.markdown("---")
+            st.subheader("⚡ Preset Conditions")
+            st.caption("Click to load a predefined engine state:")
+
+            preset_cols = st.columns(2)
+            for i, (preset_name, preset_vals) in enumerate(PRESET_SCENARIOS.items()):
+                with preset_cols[i % 2]:
+                    if st.button(preset_name, key=f"preset_{i}", use_container_width=True):
+                        if preset_name == "🎲 Random Scenario":
+                            # Generate random values
+                            st.session_state.sensor_values = {
+                                "engine_rpm": int(np.random.uniform(300, 2800)),
+                                "lub_oil_pressure": round(np.random.uniform(0.5, 8.0), 1),
+                                "fuel_pressure": round(np.random.uniform(3.0, 12.0), 1),
+                                "coolant_pressure": round(np.random.uniform(0.5, 5.0), 1),
+                                "oil_temp": int(np.random.uniform(20, 130)),
+                                "coolant_temp": int(np.random.uniform(15, 110)),
+                            }
+                        else:
+                            st.session_state.sensor_values = {
+                                k: v for k, v in preset_vals.items() if k != "description"
+                            }
+                        st.rerun()
+
+            # Show preset description if applicable
+            if st.session_state.guided_mode:
+                st.caption("ℹ️ Presets simulate common operating conditions for exploration.")
+
+        # === Column 3: Prediction Result ===
+        with col_result:
+            st.subheader("📊 Prediction Result")
 
             reading = {
-                "engine_rpm": float(engine_rpm),
-                "lub_oil_pressure": float(lub_oil_pressure),
-                "fuel_pressure": float(fuel_pressure),
-                "coolant_pressure": float(coolant_pressure),
-                "oil_temp": float(oil_temp),
-                "coolant_temp": float(coolant_temp),
+                "engine_rpm": float(st.session_state.sensor_values["engine_rpm"]),
+                "lub_oil_pressure": float(st.session_state.sensor_values["lub_oil_pressure"]),
+                "fuel_pressure": float(st.session_state.sensor_values["fuel_pressure"]),
+                "coolant_pressure": float(st.session_state.sensor_values["coolant_pressure"]),
+                "oil_temp": float(st.session_state.sensor_values["oil_temp"]),
+                "coolant_temp": float(st.session_state.sensor_values["coolant_temp"]),
             }
 
             result = predict_single(reading, models, model_choice)
@@ -428,22 +780,30 @@ def main():
             # Status display
             if result["is_anomaly"]:
                 st.error("🚨 **ANOMALY DETECTED**")
-                status_class = "status-anomaly"
             else:
                 st.success("✅ **Normal Operation**")
-                status_class = "status-normal"
 
             # Metrics
-            col2a, col2b = st.columns(2)
-            with col2a:
-                st.metric("Confidence", f"{result['confidence']:.1%}")
-            with col2b:
-                st.metric("Anomaly Score", f"{result['score']:.4f}")
+            st.metric("Anomaly Confidence", f"{result['confidence']:.1%}")
+            st.metric("Anomaly Score", f"{result['score']:.4f}")
 
             # Gauge chart
-            color = "#dc3545" if result["is_anomaly"] else "#28a745"
-            gauge = create_gauge_chart(result["confidence"], "Confidence Level", color)
+            color = "#dc3545" if result["confidence"] > 0.5 else "#28a745"
+            gauge = create_gauge_chart(result["confidence"], "Anomaly Confidence", color)
             st.plotly_chart(gauge, use_container_width=True)
+
+            # Educational explanation in guided mode
+            if st.session_state.guided_mode:
+                st.markdown("---")
+                st.markdown("**📖 Understanding the Result:**")
+                if result["confidence"] > 0.8:
+                    st.warning("⚠️ High confidence anomaly - this combination of sensor values is unusual compared to normal operation patterns.")
+                elif result["confidence"] > 0.5:
+                    st.info("ℹ️ Moderate anomaly confidence - some parameters may be outside typical ranges.")
+                elif result["confidence"] > 0.2:
+                    st.info("ℹ️ Low anomaly confidence - readings are mostly within normal bounds.")
+                else:
+                    st.success("✅ Very low anomaly confidence - this looks like normal engine operation.")
 
     # ========================================================================
     # Page: Batch Analysis
