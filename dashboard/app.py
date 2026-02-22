@@ -324,14 +324,38 @@ def create_engine_diagram(values: dict, selected_component: str = None) -> go.Fi
                   fillcolor="#2c3e50", line=dict(color="#1a252f", width=2),
                   layer="below")
 
-    # Component positions with better layout
+    # Component positions with better layout and descriptions
     components = {
-        "engine_rpm": {"x": 3.5, "y": 6.1, "label": "RPM", "icon": "🔄", "size": 45},
-        "lub_oil_pressure": {"x": 0.9, "y": 3.5, "label": "Oil P", "icon": "🛢️", "size": 38},
-        "oil_temp": {"x": 0.9, "y": 2.8, "label": "Oil T", "icon": "🌡️", "size": 32},
-        "fuel_pressure": {"x": 3.5, "y": 1.1, "label": "Fuel P", "icon": "⛽", "size": 38},
-        "coolant_pressure": {"x": 6.1, "y": 3.5, "label": "Cool P", "icon": "💧", "size": 38},
-        "coolant_temp": {"x": 6.1, "y": 2.8, "label": "Cool T", "icon": "🌡️", "size": 32},
+        "engine_rpm": {
+            "x": 3.5, "y": 6.1, "label": "RPM", "icon": "🔄", "size": 45,
+            "desc": "Engine Speed (Revolutions Per Minute)",
+            "detail": "Controls power output. Higher RPM = more power but more stress on components."
+        },
+        "lub_oil_pressure": {
+            "x": 0.9, "y": 3.5, "label": "Oil P", "icon": "🛢️", "size": 38,
+            "desc": "Lubricating Oil Pressure",
+            "detail": "Ensures oil reaches bearings. Low pressure = metal-on-metal contact risk."
+        },
+        "oil_temp": {
+            "x": 0.9, "y": 2.8, "label": "Oil T", "icon": "🌡️", "size": 32,
+            "desc": "Oil Temperature",
+            "detail": "Affects oil viscosity. Too hot = oil breakdown. Too cold = poor flow."
+        },
+        "fuel_pressure": {
+            "x": 3.5, "y": 1.1, "label": "Fuel P", "icon": "⛽", "size": 38,
+            "desc": "Fuel Injection Pressure",
+            "detail": "Controls fuel delivery to cylinders. Low = incomplete combustion."
+        },
+        "coolant_pressure": {
+            "x": 6.1, "y": 3.5, "label": "Cool P", "icon": "💧", "size": 38,
+            "desc": "Coolant System Pressure",
+            "detail": "Circulates coolant through engine. High = possible blockage or head gasket issue."
+        },
+        "coolant_temp": {
+            "x": 6.1, "y": 2.8, "label": "Cool T", "icon": "🌡️", "size": 32,
+            "desc": "Coolant Temperature",
+            "detail": "Indicates cooling efficiency. Rising temp = cooling system problem."
+        },
     }
 
     # Draw flow arrows showing relationships
@@ -385,9 +409,11 @@ def create_engine_diagram(values: dict, selected_component: str = None) -> go.Fi
             textfont=dict(size=10, color="white", family="Arial Black"),
             name=param,
             hovertemplate=(
-                f"<b>{comp['label']}</b><br>"
-                f"Value: {val_str}<br>"
-                f"Status: {status.upper()}<br>"
+                f"<b>{comp['desc']}</b><br><br>"
+                f"<b>Value:</b> {val_str} {OPERATING_REGIMES[param]['unit']}<br>"
+                f"<b>Status:</b> {status.upper()}<br>"
+                f"<b>Normal Range:</b> {OPERATING_REGIMES[param]['normal'][0]}-{OPERATING_REGIMES[param]['normal'][1]}<br><br>"
+                f"<i>{comp['detail']}</i>"
                 f"<extra></extra>"
             ),
         ))
@@ -398,12 +424,13 @@ def create_engine_diagram(values: dict, selected_component: str = None) -> go.Fi
 
     fig.update_layout(
         showlegend=False,
-        xaxis=dict(visible=False, range=[-0.2, 7.2]),
-        yaxis=dict(visible=False, range=[-0.2, 7.5]),
+        xaxis=dict(visible=False, range=[-0.2, 7.2], fixedrange=True),
+        yaxis=dict(visible=False, range=[-0.2, 7.5], fixedrange=True),
         height=380,
         margin=dict(l=5, r=5, t=10, b=5),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
+        dragmode=False,  # Disable drag/pan
     )
 
     return fig
@@ -749,6 +776,8 @@ def main():
             st.session_state.selected_component = None
         if "guided_mode" not in st.session_state:
             st.session_state.guided_mode = True
+        if "slider_version" not in st.session_state:
+            st.session_state.slider_version = 0  # Increment to force slider refresh
 
         # Guided Exploration Toggle
         st.session_state.guided_mode = st.toggle(
@@ -775,12 +804,22 @@ def main():
         with col_diagram:
             st.subheader("🔧 Engine Diagram")
 
-            # Create and display engine diagram
+            # Create and display engine diagram (no zoom/pan, but hover works)
             engine_fig = create_engine_diagram(
                 st.session_state.sensor_values,
                 st.session_state.selected_component
             )
-            st.plotly_chart(engine_fig, use_container_width=True, key="engine_diagram")
+            st.plotly_chart(
+                engine_fig,
+                use_container_width=True,
+                key="engine_diagram",
+                config={
+                    'displayModeBar': False,  # Hide toolbar
+                    'scrollZoom': False,       # Disable scroll zoom
+                    'doubleClick': False,      # Disable double-click zoom
+                    'staticPlot': False,       # Keep hover enabled
+                }
+            )
 
             # Component selection buttons
             st.markdown("**Click to highlight:**")
@@ -821,7 +860,8 @@ def main():
                 else:
                     st.markdown(f"**{label}**")
 
-                # Slider
+                # Slider - key includes version to force refresh when presets applied
+                slider_key = f"slider_{param}_v{st.session_state.slider_version}"
                 new_val = st.slider(
                     label,
                     min_value=min_val,
@@ -829,7 +869,7 @@ def main():
                     value=current_val if isinstance(current_val, int) else float(current_val),
                     step=step,
                     format=format_str,
-                    key=f"slider_{param}",
+                    key=slider_key,
                     label_visibility="collapsed"
                 )
                 st.session_state.sensor_values[param] = new_val
@@ -856,7 +896,7 @@ def main():
             st.caption("Click to load a predefined engine state:")
 
             def apply_preset(preset_vals: dict, is_random: bool = False):
-                """Apply preset values - delete widget keys so sliders reinitialize."""
+                """Apply preset values - increment version to force slider refresh."""
                 if is_random:
                     new_values = {
                         "engine_rpm": int(np.random.uniform(300, 2800)),
@@ -873,11 +913,8 @@ def main():
                 # Update session state values
                 st.session_state.sensor_values = new_values
 
-                # Delete slider widget keys so they reinitialize with new values
-                for param in new_values.keys():
-                    key = f"slider_{param}"
-                    if key in st.session_state:
-                        del st.session_state[key]
+                # Increment version to force sliders to reinitialize with new keys
+                st.session_state.slider_version += 1
 
             preset_cols = st.columns(2)
             for i, (preset_name, preset_vals) in enumerate(PRESET_SCENARIOS.items()):
