@@ -856,7 +856,7 @@ def main():
             st.caption("Click to load a predefined engine state:")
 
             def apply_preset(preset_vals: dict, is_random: bool = False):
-                """Apply preset values to both sensor_values and slider keys."""
+                """Apply preset values - delete widget keys so sliders reinitialize."""
                 if is_random:
                     new_values = {
                         "engine_rpm": int(np.random.uniform(300, 2800)),
@@ -873,9 +873,11 @@ def main():
                 # Update session state values
                 st.session_state.sensor_values = new_values
 
-                # CRITICAL: Also update the slider widget keys directly
-                for param, val in new_values.items():
-                    st.session_state[f"slider_{param}"] = val
+                # Delete slider widget keys so they reinitialize with new values
+                for param in new_values.keys():
+                    key = f"slider_{param}"
+                    if key in st.session_state:
+                        del st.session_state[key]
 
             preset_cols = st.columns(2)
             for i, (preset_name, preset_vals) in enumerate(PRESET_SCENARIOS.items()):
@@ -952,18 +954,61 @@ def main():
                     a pattern that deviates strongly from the training data.
                     """)
 
-                    # Show potential causes and fixes
+                    # Show potential causes and fixes based on ALL problematic parameters
                     st.markdown("**🔧 Potential Causes & Actions:**")
+                    suggestions_shown = False
+
+                    # Oil pressure issues
                     if reading["lub_oil_pressure"] < 2.0:
                         st.warning("• **Low Oil Pressure**: Check oil level, inspect pump, look for leaks")
+                        suggestions_shown = True
+                    elif reading["lub_oil_pressure"] > 8.0:
+                        st.warning("• **High Oil Pressure**: Check oil viscosity, inspect relief valve")
+                        suggestions_shown = True
+
+                    # Oil temperature issues
                     if reading["oil_temp"] > 110:
-                        st.warning("• **High Oil Temp**: Reduce load, check cooling, verify oil quality")
-                    if reading["coolant_temp"] > 100:
+                        st.warning("• **High Oil Temp**: Reduce load, check cooling system, verify oil quality")
+                        suggestions_shown = True
+                    elif reading["oil_temp"] < 40:
+                        st.warning("• **Low Oil Temp**: Allow warm-up time, check thermostat, use proper oil grade")
+                        suggestions_shown = True
+
+                    # Coolant temperature issues
+                    if reading["coolant_temp"] > 95:
                         st.warning("• **Overheating**: Check coolant level, inspect thermostat, clean radiator")
+                        suggestions_shown = True
+                    elif reading["coolant_temp"] < 50:
+                        st.warning("• **Undercooling**: Check thermostat (stuck open), verify coolant mixture")
+                        suggestions_shown = True
+
+                    # Fuel pressure issues
                     if reading["fuel_pressure"] < 4.0:
                         st.warning("• **Low Fuel Pressure**: Inspect fuel lines, check pump, replace filters")
+                        suggestions_shown = True
+                    elif reading["fuel_pressure"] > 12.0:
+                        st.warning("• **High Fuel Pressure**: Check regulator, inspect return line blockage")
+                        suggestions_shown = True
+
+                    # Coolant pressure issues
                     if reading["coolant_pressure"] > 5.0:
                         st.warning("• **High Coolant Pressure**: Check for blockages, inspect head gasket")
+                        suggestions_shown = True
+                    elif reading["coolant_pressure"] < 1.5:
+                        st.warning("• **Low Coolant Pressure**: Check for leaks, inspect water pump, verify coolant level")
+                        suggestions_shown = True
+
+                    # RPM issues
+                    if reading["engine_rpm"] < 400:
+                        st.warning("• **Very Low RPM**: Engine stalling risk, check idle control, fuel delivery")
+                        suggestions_shown = True
+                    elif reading["engine_rpm"] > 2500:
+                        st.warning("• **High RPM**: Reduce throttle, check governor, risk of mechanical stress")
+                        suggestions_shown = True
+
+                    # If no specific suggestions, show general guidance
+                    if not suggestions_shown:
+                        st.info("• **Unusual Pattern**: The combination of values is atypical. Check sensor calibration and compare with historical baselines.")
 
                 elif result["confidence"] > 0.5:
                     st.warning("⚠️ **MODERATE ANOMALY CONFIDENCE**")
